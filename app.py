@@ -10,7 +10,7 @@ from flask import Flask, jsonify, Response
 # Database set up
 ###################################################
 
-engine = create_engine("sqlite:///hawaii.sqlite")
+engine = create_engine("sqlite:///Resources/hawaii.sqlite")
 
 
 # reflect an existing database into a new model
@@ -23,15 +23,16 @@ Measurement = Base.classes.measurement
 Station = Base.classes.station
 
 session = Session(engine)
-session.query(Measurement.date).order_by(Measurement.date.desc()).first()
-year_ago = dt.date(2017, 8, 23) - dt.timedelta(days=365)
-session.close()
+app = Flask(__name__)
+#session.query(Measurement.date).order_by(Measurement.date.desc()).first()
+#year_ago = dt.date(2017, 8, 23) - dt.timedelta(days=365)
+#session.close()
 
 ######################################################
 # Flask Setup
 
 #################################################
-app = Flask(__name__)
+# app = Flask(__name__)
 
 
 #################################################
@@ -39,123 +40,100 @@ app = Flask(__name__)
 #################################################
 
 @app.route("/")
-def home():
+def welcome():
     """List all available api routes."""
     return (
+        f"welcome to hawaii climate analysis api:<br/>"
         f"Available Routes:<br/>"
         f"/api/v1.0/precipitation<br/>"
         f"/api/v1.0/stations<br/>"
         f"/api/v1.0/tobs<br/>"
         f"/api/v1.0/start<br/>"
-        f"/api/v1.0/start_end"
+        f"/api/v1.0/start_end<br/>"
     )
 
 @app.route("/api/v1.0/precipitation")
 def precipitation():
     # Create our session (link) from Python to the DB
-    session = Session(engine)
-
+    #session = Session(engine)
+    prev_year = dt.date(2017, 8, 23) - dt.timedelta(days=365)
     """Return a list """
     # Query all passengers
-    results = session.query(Measurement.date, Measurement.prcp).all()
+    precipitation = session.query(Measurement.date, Measurement.prcp).\
+        filter(Measurement.date >= prev_year).all()
 
     session.close()
 
 # Create a dictionary from the row data and append to a list 
-    all_prcp = []
-    for result in results:
-        prcp_dict = {}
-        prcp_dict["date"] = result[0]
-        prcp_dict["prcp"] = result[1]
-        all_prcp.append(prcp_dict)
+    precip = {date: prcp for date, prcp in precipitation}
 
-    return jsonify(all_prcp)
+    return jsonify(precip)
 
 
 @app.route("/api/v1.0/stations")
 def stations():
     # Create our session (link) from Python to the DB
-    session = Session(engine)
+   
 
     """Return a list of stations """
     # Query all stations
-    results = session.query(Station.station).group_by(Station.id).all()
+    results = session.query(Station.station).all()
 
     session.close()
 
     # Create a list of all_stations
-    all_stations = []
-    for result in results:
-        st_dict = {}
-        st_dict["station"] = result[0]
-        all_stations.append(st_dict)
-        
-        return jsonify(all_stations)
+    stations = list (np.ravel(results))
+    return jsonify(stations)
 
 @app.route("/api/v1.0/tobs")
-def tobs():
+def temp_monthly():
     # Create our session (link) from Python to the DB
-    session = Session(engine)
-
+    prev_year = dt.date(2017, 8, 23) - dt.timedelta(days=365)
     """Return a list of stations """
     # Query all dates and temperature observations of the most active station for the last year of data
-    results = session.query(Measurement.date, Measurement.tobs).filter(Measurement.station == 'USC00519281').filter(Measurement.date >= year_ago).all()
+    results = session.query(Measurement.tobs).\
+        filter(Measurement.station == 'USC00519281').\
+        filter(Measurement.date >= prev_year).all()
 
     session.close()
 
     # Create a list of all_stations
-    active_station = []
-    for result in results:
-        active_dict = {}
-        active_dict["date"] = result[0]
-        active_dict["tobs"] = result[1]
-        active_station.append(active_dict)
-        
-        return jsonify(active_station)
+    temps=list (np.ravel(results))
+    return jsonify(temps=temps)
 
-@app.route("/api/v1.0/start")
-def start():
+@app.route("/api/v1.0/<start>")
+@app.route("/api/v1.0/<start>/<end>")
+def stats(start=None, end=None):
     # Create our session (link) from Python to the DB
-    session = Session(engine)
+   
 
     """Return a list of agg data"""
     # Query TMIN, TAVG, and TMAX for all dates greater than and equal to the start date
-    results = session.query(func.min(Measurement.tobs), func.max(Measurement.tobs), func.avg(Measurement.tobs)).filter(Measurement.date >= year_ago).all()
+    sel =[func.min(Measurement.tobs), func.max(Measurement.tobs), func.avg(Measurement.tobs)]
 
+  
+
+    # Create a list of min, max, and avg
+    if not end:
+        start = dt.datetime.strptime(start, "%m%d%Y")
+        results = session.query(*sel).\
+            filter(Measurement.date >= start).all()
+
+        session.close()
+
+        temps = list(np.ravel(results))
+        return jsonify(temps)
+    start = dt.datetime.strptime(start, "%m%d%Y")
+    end = dt.datetime.strptime(end, "%m%d%Y")
+    results = session.query(*sel).\
+        filter(Measurement.date >= start).\
+        filter(Measurement.date <= end).all()
     session.close()
 
     # Create a list of min, max, and avg
-    agg_data = []
-    for result in results:
-        agg_dict = {}
-        agg_dict["TMIN"] = result[0]
-        agg_dict["TMAX"] = result[1]
-        agg_dict["TAVG"] = result[2]
-        agg_data.append(agg_dict)
+    temps=list(np.ravel(results))
         
-        return jsonify(agg_data)
-
-@app.route("/api/v1.0/start_end")
-def start_end():
-    # Create our session (link) from Python to the DB
-    session = Session(engine)
-    today = dt.datetime(2016, 8, 23)
-    """Return a list of agg data"""
-    # Query TMIN, TAVG, and TMAX for all dates between dates
-    results = session.query(func.min(Measurement.tobs), func.max(Measurement.tobs), func.avg(Measurement.tobs)).filter(Measurement.date >= year_ago).filter(Measurement.date <= today).all()
-
-    session.close()
-
-    # Create a list of min, max, and avg
-    agg_data = []
-    for result in results:
-        agg_dict = {}
-        agg_dict["TMIN"] = result[0]
-        agg_dict["TMAX"] = result[1]
-        agg_dict["TAVG"] = result[2]
-        agg_data.append(agg_dict)
-        
-        return jsonify(agg_data)
+    return jsonify(temps=temps)
 
 if __name__ == '__main__':
     app.run(debug=True)
